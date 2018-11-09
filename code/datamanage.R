@@ -109,7 +109,9 @@ tab1 <- dfm$Demo %>%
            ntest = ifelse(is.na(ntest), 0, ntest),
            race = ifelse(race == "Black or African American", "African American", "Other"),
            antibody = ifelse(is.na(antibody), 0, antibody))  %>%
-    mutate(antibody = ifelse(antibody == 1, "Anti+","Anti-")) %>%
+    mutate(antibody = ifelse(antibody == 1, "Anti+","Anti-")) 
+
+tab1 %>%
     set_variable_labels(gender = "Gender", age= "Age (years)",
                         race = "Ethnicity", death = "Mortality",
                         los = "Median length of admission", RBCtrans = "Median RBC transfusion", 
@@ -119,3 +121,122 @@ tab1 <- dfm$Demo %>%
     print(., quote = FALSE, noSpace = TRUE, printToggle = FALSE, varLabels = TRUE, nonnormal = c("los","RBCtrans","ntest")) %>%
     kable(., booktabs = TRUE, format="html")  %>%
     gsub(pattern="Mortality = 1", "Mortality", x=.)
+
+
+# - - - - - - - - - - - - - - - - - - - - - #
+# Table 2 
+# - - - - - - - - - - - - - - - - - - - - - #
+
+##- A
+
+##- B. Antibody and frequency
+
+dfm$Antibody %>%
+    select(MRN, DESC) %>%
+    # Antibodies with long name all merged to shorter names 
+    mutate(DESC = gsub(pattern="ANTI-([A-Z])", "\\1", toupper(DESC))) %>%
+    mutate(DESC = substr(toupper(DESC),1,1)) %>%
+    # Sumamrise by Antibody Group
+    group_by(DESC) %>% 
+    summarise(Frequency = n()) %>% 
+    # if we just want those starting with Anti-
+    rename(Antibody=DESC) %>% 
+    mutate(Antibody = gsub(pattern="([A-Z])","Anti-\\1",Antibody)) %>%
+    kable(., booktabs = TRUE, format="latex", align=c("l","c")) 
+
+
+# - - - - - - - - - - - - - - - - - - - - - #
+# Table 3 
+# - - - - - - - - - - - - - - - - - - - - - #
+
+
+
+
+
+
+
+
+
+
+# - - - - - - - - - - - - - - - - - - - - - #
+# Supplemental Figures
+# - - - - - - - - - - - - - - - - - - - - - #
+
+##- Supplemental Antibody frequency by gender and race figure
+
+library("ggplot2")
+library("tidyr")
+
+
+###- by Gender
+dfm$Demo %>%
+    select(MRN, age, gender,pid, race, death_date, admit_dt, discharge_dt) %>%
+    mutate(death = ifelse(is.na(death_date), 0, 1)) %>%
+    filter(!is.na(age) & !is.na(discharge_dt)) %>%
+    left_join(
+              dfm$Antibody %>%
+                  select(MRN, DESC) %>%
+                  # Antibodies with long name all merged to shorter names 
+                  mutate(DESC = gsub(pattern="ANTI-([A-Z])", "\\1", toupper(DESC))) %>%
+                  mutate(DESC = substr(toupper(DESC),1,1)) %>%
+                  rename(Antibody=DESC) %>% 
+                  mutate(Antibody = gsub(pattern="([A-Z])","Anti-\\1",Antibody)) %>%
+                  mutate(Antibodyb = 1)
+
+    ) %>%
+    filter((gender == "F" | gender == "M") & Antibodyb == 1 ) %>% 
+    mutate(
+           race = ifelse(race == "Black or African American", "African American", "Other"),
+           gender = ifelse(gender == "F", "Female", "Male")) %>%
+    mutate(antibody = ifelse(Antibodyb == 1, "Anti+","Anti-"))  %>%
+    dplyr::select(MRN, age, gender, race, Antibody) %>% 
+    group_by(Antibody, gender) %>%
+    summarise(n = n()) %>% spread(gender, n) %>%
+    mutate_all(funs(replace(., is.na(.), 0))) %>%
+    gather(., gender, value, Female:Male) %>% 
+    #ggplot(., aes(Antibody, value)) +
+    ggplot(., aes(gender, value)) +
+    geom_bar(aes(fill=gender), position = "dodge", stat="identity") +
+    #geom_bar(position = "dodge", stat="identity") +
+    facet_wrap(~Antibody) +
+    #geom_bar(aes(fill=gender), position = "dodge", stat="identity") +
+    theme_minimal() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+###- by Race
+dfm$Demo %>%
+    select(MRN, age, gender,pid, race, death_date, admit_dt, discharge_dt) %>%
+    mutate(death = ifelse(is.na(death_date), 0, 1)) %>%
+    filter(!is.na(age) & !is.na(discharge_dt)) %>%
+    left_join(
+              dfm$Antibody %>%
+                  select(MRN, DESC) %>%
+                  # Antibodies with long name all merged to shorter names 
+                  mutate(DESC = gsub(pattern="ANTI-([A-Z])", "\\1", toupper(DESC))) %>%
+                  mutate(DESC = substr(toupper(DESC),1,1)) %>%
+                  rename(Antibody=DESC) %>% 
+                  mutate(Antibody = gsub(pattern="([A-Z])","Anti-\\1",Antibody)) %>%
+                  mutate(Antibodyb = 1)
+
+    ) %>%
+    filter((gender == "F" | gender == "M") & Antibodyb == 1 ) %>% 
+    mutate(
+           race = ifelse(race == "Black or African American", "African American", "Other"),
+           gender = ifelse(gender == "F", "Female", "Male")) %>%
+    mutate(antibody = ifelse(Antibodyb == 1, "Anti+","Anti-"))  %>%
+    dplyr::select(MRN, age, gender, race, Antibody) %>% 
+    group_by(Antibody, race) %>%
+    summarise(n = n()) %>% spread(race, n) %>%
+    mutate_all(funs(replace(., is.na(.), 0))) %>% 
+    gather(., race, value, 2:3) %>% 
+    #ggplot(., aes(Antibody, value)) +
+    #geom_bar(aes(fill=race), position = "dodge", stat="identity") +
+    ggplot(., aes(race, value)) +
+    geom_bar(aes(fill=race), position = "dodge", stat="identity") +
+    facet_wrap(~Antibody) +
+    #geom_bar(aes(fill=race), position = "dodge", stat="identity") +
+    theme_minimal() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
