@@ -1,0 +1,106 @@
+---
+title: "Alloimmunity & Trauma"
+author: "Team Pham"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+    fig_caption: true
+    theme: flatly
+---
+
+## Table 1: Demographics
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='Figs/',
+                      echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+```{r datasetup}
+library("knitr")
+
+rm(list=ls())
+library(rio)
+dfm <- import_list("../data/master.xls")
+
+library(dplyr)
+
+# - - - - - - - - - - - - - - - - - - - - - #
+#---- rename things
+# - - - - - - - - - - - - - - - - - - - - - #
+names(dfm) <- c("Demo","Order","Antibody","Pregnancy","TransRxn","Trans")
+
+demname <- c("MRN","FRN","pid","gender","race","age","event","weight","blood_type","pregnancy_status","admit_dt","discharge_dt","death_date","encounter_key")
+names(dfm$Demo) <- demname
+
+names(dfm$Order) <- c("MRN","ORD","ORD_DT","CANCEL_DT","CANCEL_R","CANCEL_P","complete_dt")
+
+demname <- c("ENC","PER","pid","prod_nb","prod_nm","prod_cl","trans_vol","prod_cat","prod_event","prod_event_dt")
+names(dfm$Trans) <- demname
+
+demname <- c("MRN","DESC",paste0("LT_", as.character(1:8)))
+names(dfm$Antibody) <- demname
+
+library("tableone")
+library("knitr")
+library("labelled")
+library("kableExtra")
+library("dplyr")
+
+dfm$Demo %>%
+    select(MRN, age, gender,pid, race, death_date, admit_dt, discharge_dt) %>%
+    mutate(death = ifelse(is.na(death_date), 0, 1)) %>%
+    filter(!is.na(age) & !is.na(discharge_dt)) %>%
+    left_join(
+              dfm$Trans %>%
+                  filter(prod_cat == "RBC")  %>%
+                  group_by(pid) %>%
+                  summarise(RBCtrans = n()) 
+    ) %>%
+    mutate(RBCtrans = ifelse(is.na(RBCtrans), 0, RBCtrans)) %>%
+    left_join(
+              dfm$Order %>%
+                  filter(!is.na(complete_dt)) %>%
+                  group_by(MRN) %>%
+                  summarise(ntest = n())
+    ) %>%
+    left_join(
+              dfm$Antibody %>%
+                  select(MRN, DESC) %>%
+                  # Filter if we only want Anti- in DESC column
+                  #filter(grepl("Anti-", DESC)) %>% 
+                  mutate(antibody = 1)
+    ) %>%
+    filter(gender == "F" | gender == "M") %>%
+    mutate(los = as.numeric(difftime(discharge_dt, admit_dt, units="days")),
+           ntest = ifelse(is.na(ntest), 0, ntest),
+           # change race
+           race = ifelse(race == "Black or African American", "African American", "Other"),
+           antibody = ifelse(is.na(antibody), 0, antibody))  %>%
+    mutate(antibody = ifelse(antibody == 1, "Anti+","Anti-")) %>%
+    set_variable_labels(gender = "Gender", age= "Age (years)",
+                        race = "Ethnicity", death = "Mortality",
+                        los = "Length of admission", RBCtrans = "Number of RBC transfusion", 
+                        ntest = "Number of Type & Screen tests performed") %>%
+    CreateTableOne(vars = c("age","gender","race","death","los","RBCtrans","ntest"),
+                        factorVars = c("gender","death"), strata = c("antibody"), data=.) %>%
+    print(., quote = FALSE, noSpace = TRUE, printToggle = FALSE, varLabels = TRUE, nonnormal = c("los","RBCtrans","ntest")) %>%
+    kable(., booktabs = TRUE, format="html")  %>%
+    #gsub(pattern="Age (years) (mean (sd))", "Age (years)", x=.) %>%
+    gsub(pattern="Gender = M \\(%\\)", "Gender \\(% male\\)", x=.) %>%
+    gsub(pattern="Ethnicity = Other \\(%\\)", "Ethnicity \\(% African American\\)", x=.) %>%
+    gsub(pattern="Mortality = 1", "Mortality", x=.)
+
+```
+
+
+## Table 2: Antibody characteristics
+
+
+## Table 3: Transfusion and Antibody Development
+
+
+## Table 4: Outcomes analysis
+
+
+## Table 2: Antibody characteristics
