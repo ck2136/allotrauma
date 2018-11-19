@@ -16,15 +16,15 @@ library(rio)
 library(dplyr)
 library("knitr")
 # master data
-dfm <- import_list("../data/master.xls")
+dfm <- import_list("../data/raw/master.xls")
 # antibody development data
-abd <- import("../data/LS_annotated_corr_DEIDENTIFIED.csv")
+abd <- import("../data/raw/LS_annotated_corr_DEIDENTIFIED.csv")
 # T&S data
-tns <- import("../data/TBICU_order_DEIDENTIFIED.csv")
+tns <- import("../data/raw/TBICU_order_DEIDENTIFIED.csv")
 # Transfusion data
-transf <- import("../data/TBICU_BLODD.xlsx")
+transf <- import("../data/raw/TBICU_BLODD.xlsx")
 # Demographic data
-demodf <- import("../data/DEMO_RQ_DEIDENTIFIED.csv")
+demodf <- import("../data/raw/DEMO_RQ_DEIDENTIFIED.csv")
 
 
 
@@ -176,6 +176,9 @@ mutate(antibody = ifelse(is.na(antibody), 0, 1)) %>%
 demodf %>% distinct(MRN) %>% nrow
 
 
+# count of neg and pos
+antinegcount <- tab1 %>% filter(antibody == "Anti-") %>% nrow
+antiposcount <- tab1 %>% filter(antibody == "Anti+") %>% nrow
 
 
 tab1 %>%
@@ -197,10 +200,34 @@ tab1 %>%
 
 ##- A
 
-##- B. Antibody and frequency
+###--- number of patients admitted with history of antibody formation
+library('tidyr')
+
+abd %>% 
+    select(contains("pre Y=1"),Dev,MRN) %>%
+    mutate(preabd = rowSums(.[1:16])) %>% 
+    filter(preabd > 0) %>%
+    #filter(preabd > 0 & Dev == 0) %>%
+    dplyr::select(MRN) %>% nrow
+
+###--- Antibodies present on admission
+
+preadmabd <- abd %>% 
+    select(contains("pre Y=1")) %>%
+    mutate(preabd = rowSums(.[1:16])) %>% 
+    filter(preabd > 0) %>%
+    #filter(preabd > 0 & Dev == 0) %>%
+    gather(., antibody, value, -preabd) %>% 
+    filter(value == 1) %>%
+    mutate(antibody = gsub(pattern="(.+) pre Y=1","\\1", antibody)) %>%
+    group_by(antibody) %>%
+    summarise(Frequency = n()) 
+
+
+###-- Post Admission Antibody formed
 
 library(tidyr)
-abd  %>%
+postadmabd <- abd  %>%
     # select only those that have actually developed antibody during admission
     filter(Dev == 1) %>% 
     select(contains("during")) %>%
@@ -211,6 +238,14 @@ abd  %>%
     summarise(Frequency = n()) %>%
     mutate(antibody = gsub(pattern="(.+) during Y=1","\\1", antibody))
     
+##-
+
+preadmabd %>%
+    full_join(postadmabd, by="antibody") %>%
+    mutate_all(funs(ifelse(is.na(.), 0, .))) %>%
+    rename(Antibody = antibody,
+            `Pre Admission` = 2,
+            `Post Admission` = 3)
 
 
 # - - - - - - - - - - - - - - - - - - - - - #

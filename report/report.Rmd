@@ -31,15 +31,15 @@ library("tidyr")
 
 rm(list=ls())
 library(rio)
-dfm <- import_list("../data/master.xls")
+dfm <- import_list("../data/raw/master.xls")
 # antibody development data
-abd <- import("../data/LS_annotated_corr_DEIDENTIFIED.csv")
+abd <- import("../data/raw/LS_annotated_corr_DEIDENTIFIED.csv")
 # T&S data
-tns <- import("../data/TBICU_order_DEIDENTIFIED.csv")
+tns <- import("../data/raw/TBICU_order_DEIDENTIFIED.csv")
 # Transfusion data
-transf <- import("../data/TBICU_BLODD.xlsx" )
+transf <- import("../data/raw/TBICU_BLODD.xlsx")
 # Demographic data
-demodf <- import("../data/DEMO_RQ_DEIDENTIFIED.csv")
+demodf <- import("../data/raw/DEMO_RQ_DEIDENTIFIED.csv")
 
 
 library(dplyr)
@@ -75,17 +75,12 @@ democ <- demodf %>%
     # select relevant variables
     select(MRN, age, gender,race, death_date, admit_dt, discharge_dt) %>%
     # if not dead set as 0
-    mutate(           
+    mutate(death = ifelse(is.na(death_date), 0, 1),
            MRN = as.integer(MRN),
            admit_dt = as.POSIXct(admit_dt, format = "%m/%d/%Y %H:%M"),
-           death_date = as.POSIXct(death_date, format = "%m/%d/%Y %H:%M"),
-           discharge_dt = as.POSIXct(discharge_dt, format="%m/%d/%Y %H:%M")
-           ) %>%
+           discharge_dt = as.POSIXct(discharge_dt, format="%m/%d/%Y %H:%M")) %>%
     # only those with age and discharge date
-    filter(!is.na(age) & !is.na(discharge_dt) & gender != "U") %>% 
-    mutate(
-           death = ifelse(is.na(death_date), 0, 1),
-    )
+    filter(!is.na(age) & !is.na(discharge_dt))
 
 tab1 <- democ %>%
     left_join(
@@ -165,13 +160,12 @@ mutate(antibody = ifelse(is.na(antibody), 0, 1)) %>%
 
 
 antiposcount <- tab1 %>% filter(antibody == "Anti+") %>% nrow
-antinegcount<- tab1 %>% filter(antibody == "Anti-") %>% nrow
+antinegcount <- tab1 %>% filter(antibody == "Anti-") %>% nrow
 
 
     tab1 %>%
     CreateTableOne(vars = c("age","gender","race","death","los","RBCtrans","plasmatrans","cryop","pp","ntest"),
                    factorVars = c("gender","death"), strata = c("antibody"), data=.) %>%
-    #print(., quote = FALSE, noSpace = TRUE, printToggle = FALSE, varLabels = TRUE, nonnormal = c("los","RBCtrans","plasmatrans","ntest")) %>%
     print(., quote = FALSE, noSpace = TRUE, printToggle = FALSE, varLabels = TRUE, nonnormal = c("los","RBCtrans","plasmatrans","cryop","pp","ntest")) %>%
     .[, 1:3] %>%
     kable(., booktabs = TRUE, format="latex", align=c("c","c","r","r") ,caption = "Demographics")  %>%
@@ -184,15 +178,30 @@ antinegcount<- tab1 %>% filter(antibody == "Anti-") %>% nrow
     gsub(pattern="Mortality = 1", "Mortality", x=.)  %>%
     gsub(pattern="\\[H\\]", "\\[h!\\]",x=.)
 
-
 ```
 
 
 ```{r tab2antspec, results='asis'}
+library('tidyr')
 
+###--- Antibodies present on admission
+
+preadmabd <- abd %>% 
+    select(contains("pre Y=1")) %>%
+    mutate(preabd = rowSums(.[1:16])) %>% 
+    filter(preabd > 0) %>%
+    #filter(preabd > 0 & Dev == 0) %>%
+    gather(., antibody, value, -preabd) %>% 
+    filter(value == 1) %>%
+    mutate(antibody = gsub(pattern="(.+) pre Y=1","\\1", antibody)) %>%
+    group_by(antibody) %>%
+    summarise(Frequency = n()) 
+
+
+###-- Post Admission Antibody formed
 
 library(tidyr)
-abd  %>%
+postadmabd <- abd  %>%
     # select only those that have actually developed antibody during admission
     filter(Dev == 1) %>% 
     select(contains("during")) %>%
@@ -201,10 +210,20 @@ abd  %>%
     filter(value == 1) %>%
     group_by(antibody) %>%
     summarise(Frequency = n()) %>%
-    mutate(antibody = gsub(pattern="(.+) during Y=1","\\1", antibody)) %>%
+    mutate(antibody = gsub(pattern="(.+) during Y=1","\\1", antibody))
+    
+##-
+
+preadmabd %>%
+    full_join(postadmabd, by="antibody") %>%
+    mutate_all(funs(ifelse(is.na(.), 0, .))) %>%
+    rename(Antibody = antibody,
+            `Pre Admission` = 2,
+            `Post Admission` = 3) %>%
     kable(., booktabs = TRUE, format="latex", align=c("l","c") ,caption = "Antibody Specificity") %>%
     kable_styling(position = "center") %>%
     gsub(pattern="\\[H\\]","\\[h\\]", x=.)
+
 
 ```
 
@@ -228,12 +247,13 @@ expand.grid(`Number of RBC transfusion` = c('0', '1-5','6-10','11-20','>20'), an
     spread(antibody, value) %>% 
     mutate(`% Developed Antibody During Encounter` = `Anti+`/(`Anti+`+`Anti-`) * 100) %>%
     .[match(c("0","1-5","6-10","11-20",">20"), .$`Number of RBC transfusion`), ] %>%
-    dplyr::select(`Number of RBC transfusion`, `% Developed Antibody During Encounter`) %>%
+    #dplyr::select(`Number of RBC transfusion`, `% Developed Antibody During Encounter`) %>%
     kable(., booktabs = TRUE, format="latex", align=c("l","c"), row.names=FALSE, caption="Transfusion and Antibody Development")   %>%
     kable_styling(position = "center") %>%
     gsub(pattern="\\[H\\]","\\[h\\]", x=.)
 
 ```
+
 
 ## Table 4: Outcomes analysis
 
