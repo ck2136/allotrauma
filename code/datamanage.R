@@ -13,6 +13,8 @@
 
 rm(list=ls())
 library(rio)
+library(dplyr)
+library("knitr")
 # master data
 dfm <- import_list("../data/master.xls")
 # antibody development data
@@ -20,11 +22,10 @@ abd <- import("../data/LS_annotated_corr_DEIDENTIFIED.csv")
 # T&S data
 tns <- import("../data/TBICU_order_DEIDENTIFIED.csv")
 # Transfusion data
-transf <- import("../data/TBICU_BLODD_DEIDENTIFIED.csv")
+transf <- import("../data/TBICU_BLODD.xlsx")
+# Demographic data
+demodf <- import("../data/DEMO_RQ_DEIDENTIFIED.csv")
 
-
-library(dplyr)
-library("knitr")
 
 
 # - - - - - - - - - - - - - - - - - - - - - #
@@ -33,8 +34,10 @@ library("knitr")
 names(dfm) <- c("Demo","Order","Antibody","Pregnancy","TransRxn","Trans")
 
 demname <- c("MRN","FRN","pid","gender","race","age","event","weight","blood_type","pregnancy_status","admit_dt","discharge_dt","death_date","encounter_key")
-
 names(dfm$Demo) <- demname
+demname <- c("MRN","FRN","gender","race","age","event","weight","blood_type","pregnancy_status","admit_dt","discharge_dt","death_date","encounter_key")
+
+names(demodf) <- demname
 
 # Demographic table part 1
 #dfm$Demo %>%
@@ -60,15 +63,8 @@ transf %>%
 ## Antibody
 
 #--- patients that have developed antibody during admission
-abdmrn <- abd %>% filter(Dev == 1) %>% dplyr::select(MRN, Dev)
-
-demname <- c("MRN","DESC",paste0("LT_", as.character(1:8)))
-names(dfm$Antibody) <- demname
-dfm$Antibody %>%
-    select(MRN, DESC) %>%
-    # Filter if we only want Anti- in DESC column
-    #filter(grepl("Anti-", DESC)) %>% 
-    mutate(antibody = 1)
+abdmrn <- abd %>% filter(Dev == 1) %>% dplyr::select(MRN, Dev) %>%
+    rename(antibody = Dev)
 
 
 # - - - - - - - - - - - - - - - - - - - - - #
@@ -82,58 +78,93 @@ library("kableExtra")
 library("dplyr")
 
 
-dfm$Demo %>%
-    select(MRN, age, gender,pid, race, death_date, admit_dt, discharge_dt) %>%
+# Demographic data
+democ <- demodf %>%
+    # select relevant variables
+    select(MRN, age, gender,race, death_date, admit_dt, discharge_dt) %>%
+    # if not dead set as 0
     mutate(death = ifelse(is.na(death_date), 0, 1),
-           MRN = as.integer(MRN)) %>%
-    filter(!is.na(age) & !is.na(discharge_dt)) %>%
-    left_join(
-              transf %>%
-                  filter(CONTENT == "SPEC PLASMA-MOD")  %>% str
-    ) %>%  filter(!is.na(CONTENT))
+           MRN = as.integer(MRN),
+           admit_dt = as.POSIXct(admit_dt, format = "%m/%d/%Y %H:%M"),
+           discharge_dt = as.POSIXct(discharge_dt, format="%m/%d/%Y %H:%M")) %>%
+    # only those with age and discharge date
+    filter(!is.na(age) & !is.na(discharge_dt) & gender != "U")
 
 
-tab1 <- dfm$Demo %>%
-    select(MRN, age, gender,pid, race, death_date, admit_dt, discharge_dt) %>%
-    mutate(death = ifelse(is.na(death_date), 0, 1)) %>%
-    filter(!is.na(age) & !is.na(discharge_dt)) %>%
+
+
+
+
+tab1 <- democ %>%
     left_join(
-              transf %>%
-                  filter(CONTENT == "RBC")  %>%
+              democ %>%
+                  # join the plasma data
+                  left_join(
+                            transf %>%
+                                filter(CONTENT == "RBC") 
+                            ) %>%  filter(!is.na(CONTENT)) %>%
+                  # make sure Transfusion done between admissions for each MRN
+                  dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, TIMESTAMP) %>%
+                  filter(TIMESTAMP <= discharge_dt && admit_dt <= TIMESTAMP) %>% 
                   group_by(MRN) %>%
-                  summarise(RBCtrans = n()) 
+                  summarise(RBCtrans = n())
     ) %>%
+mutate(RBCtrans = ifelse(is.na(RBCtrans), 0, RBCtrans)) %>%
+    # plasma transfusion
     left_join(
-              transf %>%
-                  filter(CONTENT == "SPEC PLASMA-MOD")  %>%
+              democ %>%
+                  # join the plasma data
+                  left_join(
+                            transf %>%
+                                filter(CONTENT == "SPEC PLASMA-MOD") 
+                            ) %>%  filter(!is.na(CONTENT)) %>%
+                  # make sure Transfusion done between admissions for each MRN
+                  dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, TIMESTAMP) %>%
+                  filter(TIMESTAMP <= discharge_dt && admit_dt <= TIMESTAMP) %>% 
                   group_by(MRN) %>%
-                  summarise(Plastrans = n()) 
+                  summarise(plasmatrans = n())
     ) %>%
+mutate(plasmatrans = ifelse(is.na(plasmatrans), 0, plasmatrans)) %>%
     left_join(
-              transf %>%
-                  filter(CONTENT == "CRYO-TH")  %>%
+              democ %>%
+                  # join the plasma data
+                  left_join(
+                            transf %>%
+                                filter(CONTENT == "CRYO-TH") 
+                            ) %>%  filter(!is.na(CONTENT)) %>%
+                  # make sure Transfusion done between admissions for each MRN
+                  dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, TIMESTAMP) %>%
+                  filter(TIMESTAMP <= discharge_dt && admit_dt <= TIMESTAMP) %>% 
                   group_by(MRN) %>%
-                  summarise(cryotr = n()) 
+                  summarise(cryop = n())
     ) %>%
+mutate(cryop = ifelse(is.na(cryop), 0, cryop)) %>%
     left_join(
-              transf %>%
-                  filter(CONTENT == "CRYO-TH")  %>%
+              democ %>%
+                  # join the plasma data
+                  left_join(
+                            transf %>%
+                                filter(CONTENT == "PP") 
+                            ) %>%  filter(!is.na(CONTENT)) %>%
+                  # make sure Transfusion done between admissions for each MRN
+                  dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, TIMESTAMP) %>%
+                  filter(TIMESTAMP <= discharge_dt && admit_dt <= TIMESTAMP) %>% 
                   group_by(MRN) %>%
-                  summarise(cryotr = n()) 
+                  summarise(pp = n())
     ) %>%
-    mutate(RBCtrans = ifelse(is.na(RBCtrans), 0, RBCtrans),
-           MRN = as.integer(MRN)) %>% 
+mutate(pp = ifelse(is.na(pp), 0, pp)) %>% 
+    # add antibody development
+    left_join(
+              abdmrn
+    ) %>% 
+mutate(antibody = ifelse(is.na(antibody), 0, 1)) %>%
+    # add type & screen test performed
     left_join(
               tns %>%
-                  filter(!is.na(complete_dt)) %>%
+                  filter(!is.na(STATUS)) %>%
                   group_by(MRN) %>%
                   summarise(ntest = n())
-    ) %>%
-    left_join(
-              abdmrn %>%
-                  mutate(antibody = ifelse(Dev == 1, 1, 0))
-    ) %>%
-    filter(gender == "F" | gender == "M") %>%
+    ) %>% 
     mutate(los = as.numeric(difftime(discharge_dt, admit_dt, units="days")),
            ntest = ifelse(is.na(ntest), 0, ntest),
            race = ifelse(race == "Black or African American", "African American", "Other"),
@@ -141,10 +172,17 @@ tab1 <- dfm$Demo %>%
     mutate(antibody = ifelse(antibody == 1, "Anti+","Anti-")) 
 
 
+# remember there are duplicate people in the data
+demodf %>% distinct(MRN) %>% nrow
+
+
+
+
 tab1 %>%
     set_variable_labels(gender = "Gender", age= "Age (years)",
                         race = "Ethnicity", death = "Mortality",
                         los = "Median length of admission", RBCtrans = "Median RBC transfusion", 
+                        
                         ntest = "Median number of type and screen tests performed") %>%
     CreateTableOne(vars = c("age","gender","race","death","los","RBCtrans","ntest"),
                         factorVars = c("gender","death"), strata = c("antibody"), data=.) %>%
@@ -161,19 +199,18 @@ tab1 %>%
 
 ##- B. Antibody and frequency
 
-dfm$Antibody %>%
-    select(MRN, DESC) %>%
-    # Antibodies with long name all merged to shorter names 
-    mutate(DESC = gsub(pattern="ANTI-([A-Z])", "\\1", toupper(DESC))) %>%
-    mutate(DESC = substr(toupper(DESC),1,1)) %>%
-    # Sumamrise by Antibody Group
-    group_by(DESC) %>% 
-    summarise(Frequency = n()) %>% 
-    # if we just want those starting with Anti-
-    rename(Antibody=DESC) %>% 
-    mutate(Antibody = gsub(pattern="([A-Z])","Anti-\\1",Antibody)) %>%
-    kable(., booktabs = TRUE, format="latex", align=c("l","c")) %>%
-    gsub(pattern="\\[H\\]","\\[!htbp\\]", x=.)
+library(tidyr)
+abd  %>%
+    # select only those that have actually developed antibody during admission
+    filter(Dev == 1) %>% 
+    select(contains("during")) %>%
+    .[,-1] %>%
+    gather(., antibody, value) %>% 
+    filter(value == 1) %>%
+    group_by(antibody) %>%
+    summarise(Frequency = n()) %>%
+    mutate(antibody = gsub(pattern="(.+) during Y=1","\\1", antibody))
+    
 
 
 # - - - - - - - - - - - - - - - - - - - - - #
@@ -219,14 +256,27 @@ expand.grid(`Number of RBC transfusion` = c('0', '1-5','6-10','11-20','>20'), an
 library("ggplot2")
 library("tidyr")
 
-
-###- by Gender
+democ %>%
+    left_join(
+              abd %>% 
+                  filter(Dev == 1) %>% 
+                  select(contains("during"), MRN) %>%
+                  .[,-1] %>%
+                  gather(., antibody, value, -MRN) %>% 
+                  group_by(MRN, antibody) %>%
+                  summarise(Frequency = n()) %>%
+                  mutate(antibody = gsub(pattern="(.+) during Y=1","\\1", antibody)) %>%
+                  mutate(antibody = toupper(antibody)) %>%
+                  group_by(MRN, antibody) %>%
+                  summarise(Frequency = n())
+    )
 dfm$Demo %>%
     select(MRN, age, gender,pid, race, death_date, admit_dt, discharge_dt) %>%
     mutate(death = ifelse(is.na(death_date), 0, 1)) %>%
     filter(!is.na(age) & !is.na(discharge_dt)) %>%
     left_join(
               dfm$Antibody %>%
+                  rename(MRN = 1, DESC = 2) %>%
                   select(MRN, DESC) %>%
                   # Antibodies with long name all merged to shorter names 
                   mutate(DESC = gsub(pattern="ANTI-([A-Z])", "\\1", toupper(DESC))) %>%
