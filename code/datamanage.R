@@ -13,10 +13,19 @@
 
 rm(list=ls())
 library(rio)
+# master data
 dfm <- import_list("../data/master.xls")
+# antibody development data
+abd <- import("../data/LS_annotated_corr_DEIDENTIFIED.csv")
+# T&S data
+tns <- import("../data/TBICU_order_DEIDENTIFIED.csv")
+# Transfusion data
+transf <- import("../data/TBICU_BLODD_DEIDENTIFIED.csv")
+
 
 library(dplyr)
 library("knitr")
+
 
 # - - - - - - - - - - - - - - - - - - - - - #
 #---- rename things
@@ -36,29 +45,23 @@ names(dfm$Demo) <- demname
 # Demographic table part 2 RBC transfusion and Number of T&S tests
 
 ## orders that are completed
-names(dfm$Order) <- c("MRN","ORD","ORD_DT","CANCEL_DT","CANCEL_R","CANCEL_P","complete_dt")
-dfm$Order %>%
+names(tns) <- c("MRN","ORD","ORD_DT","CANCEL_DT","CANCEL_R","CANCEL_P","complete_dt","STATUS")
+tns %>%
     filter(!is.na(complete_dt)) %>%
     group_by(MRN) %>%
     summarise(n = n())
-##
-dfm$Antibody %>%
-    filter(!is.na(LONG_TEXT_3))%>%
-    head
 
 ##
-dfm$TransRxn %>%
-    distinct(MEDICAL_RECORD_NBR, .keep_all = TRUE) 
-
-##
-demname <- c("ENC","PER","pid","prod_nb","prod_nm","prod_cl","trans_vol","prod_cat","prod_event","prod_event_dt")
-names(dfm$Trans) <- demname
-dfm$Trans %>%
-    filter(prod_cat == "RBC")  %>%
-    group_by(pid) %>%
+transf %>%
+    filter(CONTENT == "RBC")  %>%
+    group_by(MRN) %>%
     summarise(RBCtrans = n()) 
 
 ## Antibody
+
+#--- patients that have developed antibody during admission
+abdmrn <- abd %>% filter(Dev == 1) %>% dplyr::select(MRN, Dev)
+
 demname <- c("MRN","DESC",paste0("LT_", as.character(1:8)))
 names(dfm$Antibody) <- demname
 dfm$Antibody %>%
@@ -79,30 +82,56 @@ library("kableExtra")
 library("dplyr")
 
 
-#tab1 <- dfm$Demo %>%
+dfm$Demo %>%
+    select(MRN, age, gender,pid, race, death_date, admit_dt, discharge_dt) %>%
+    mutate(death = ifelse(is.na(death_date), 0, 1),
+           MRN = as.integer(MRN)) %>%
+    filter(!is.na(age) & !is.na(discharge_dt)) %>%
+    left_join(
+              transf %>%
+                  filter(CONTENT == "SPEC PLASMA-MOD")  %>% str
+    ) %>%  filter(!is.na(CONTENT))
+
+
 tab1 <- dfm$Demo %>%
     select(MRN, age, gender,pid, race, death_date, admit_dt, discharge_dt) %>%
     mutate(death = ifelse(is.na(death_date), 0, 1)) %>%
     filter(!is.na(age) & !is.na(discharge_dt)) %>%
     left_join(
-              dfm$Trans %>%
-                  filter(prod_cat == "RBC")  %>%
-                  group_by(pid) %>%
+              transf %>%
+                  filter(CONTENT == "RBC")  %>%
+                  group_by(MRN) %>%
                   summarise(RBCtrans = n()) 
     ) %>%
-    mutate(RBCtrans = ifelse(is.na(RBCtrans), 0, RBCtrans)) %>%
     left_join(
-              dfm$Order %>%
+              transf %>%
+                  filter(CONTENT == "SPEC PLASMA-MOD")  %>%
+                  group_by(MRN) %>%
+                  summarise(Plastrans = n()) 
+    ) %>%
+    left_join(
+              transf %>%
+                  filter(CONTENT == "CRYO-TH")  %>%
+                  group_by(MRN) %>%
+                  summarise(cryotr = n()) 
+    ) %>%
+    left_join(
+              transf %>%
+                  filter(CONTENT == "CRYO-TH")  %>%
+                  group_by(MRN) %>%
+                  summarise(cryotr = n()) 
+    ) %>%
+    mutate(RBCtrans = ifelse(is.na(RBCtrans), 0, RBCtrans),
+           MRN = as.integer(MRN)) %>% 
+    left_join(
+              tns %>%
                   filter(!is.na(complete_dt)) %>%
                   group_by(MRN) %>%
                   summarise(ntest = n())
     ) %>%
     left_join(
-              dfm$Antibody %>%
-                  select(MRN, DESC) %>%
-                  # Filter if we only want Anti- in DESC column
-                  #filter(grepl("Anti-", DESC)) %>% 
-                  mutate(antibody = 1)
+              abdmrn %>%
+                  mutate(antibody = ifelse(Dev == 1, 1, 0))
     ) %>%
     filter(gender == "F" | gender == "M") %>%
     mutate(los = as.numeric(difftime(discharge_dt, admit_dt, units="days")),
@@ -110,6 +139,7 @@ tab1 <- dfm$Demo %>%
            race = ifelse(race == "Black or African American", "African American", "Other"),
            antibody = ifelse(is.na(antibody), 0, antibody))  %>%
     mutate(antibody = ifelse(antibody == 1, "Anti+","Anti-")) 
+
 
 tab1 %>%
     set_variable_labels(gender = "Gender", age= "Age (years)",
@@ -142,14 +172,36 @@ dfm$Antibody %>%
     # if we just want those starting with Anti-
     rename(Antibody=DESC) %>% 
     mutate(Antibody = gsub(pattern="([A-Z])","Anti-\\1",Antibody)) %>%
-    kable(., booktabs = TRUE, format="latex", align=c("l","c")) 
+    kable(., booktabs = TRUE, format="latex", align=c("l","c")) %>%
+    gsub(pattern="\\[H\\]","\\[!htbp\\]", x=.)
 
 
 # - - - - - - - - - - - - - - - - - - - - - #
 # Table 3 
 # - - - - - - - - - - - - - - - - - - - - - #
 
+##- % patients who have had x amount of RBC transfusions that developed antibody during transfusion encounter
 
+expand.grid(`Number of RBC transfusion` = c('0', '1-5','6-10','11-20','>20'), antibody= c('Anti+','Anti-')) %>%
+    left_join(
+              tab1 %>%
+                  mutate('Number of RBC transfusion' = ifelse(RBCtrans == 0, '0', 
+                                                              ifelse(RBCtrans < 6 & RBCtrans > 0, '1-5', 
+                                                                     ifelse(RBCtrans <11 & RBCtrans >5, '6-10', 
+                                                                            ifelse(RBCtrans >10 & RBCtrans < 21, '11-20', '>20'))))) %>%
+              dplyr::select(`Number of RBC transfusion`, antibody)  %>%
+              group_by(`Number of RBC transfusion`, antibody, add=TRUE) %>%
+              #group_by(`Number of RBC transfusion`) %>% head
+              summarise(value = n())  
+    ) %>% 
+    mutate(value = ifelse(is.na(value), 0, value)) %>%
+    spread(antibody, value) %>% 
+    mutate(`% Developed Antibody During Encounter` = `Anti+`/(`Anti+`+`Anti-`) * 100) %>%
+    .[match(c("0","1-5","6-10","11-20",">20"), .$`Number of RBC transfusion`), ] %>%
+    dplyr::select(`Number of RBC transfusion`, `% Developed Antibody During Encounter`) %>%
+    kable(., booktabs = TRUE, format="latex", align=c("l","c"), row.names=FALSE)   %>%
+    kable_styling(position = "center") %>%
+    gsub(pattern="\\[H\\]","\\[!htbp\\]", x=.)
 
 
 
