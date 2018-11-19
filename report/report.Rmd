@@ -75,12 +75,15 @@ democ <- demodf %>%
     # select relevant variables
     select(MRN, age, gender,race, death_date, admit_dt, discharge_dt) %>%
     # if not dead set as 0
-    mutate(death = ifelse(is.na(death_date), 0, 1),
+    mutate(
            MRN = as.integer(MRN),
+           death_date = as.POSIXct(death_date, format = "%m/%d/%Y %H:%M"),
            admit_dt = as.POSIXct(admit_dt, format = "%m/%d/%Y %H:%M"),
            discharge_dt = as.POSIXct(discharge_dt, format="%m/%d/%Y %H:%M")) %>%
+    mutate(death = ifelse(is.na(death_date), 0, 1)
+    ) %>%
     # only those with age and discharge date
-    filter(!is.na(age) & !is.na(discharge_dt))
+    filter(!is.na(age) & !is.na(discharge_dt) & gender != "U")
 
 tab1 <- democ %>%
     left_join(
