@@ -184,6 +184,14 @@ antinegcount <- tab1 %>% filter(antibody == "Anti-") %>% nrow
 ```{r tab2antspec, results='asis'}
 library('tidyr')
 
+###--- Total number of admissions associated  with Ab
+totadmabd <- abd %>% 
+    select(contains("pre Y=1"),Dev,MRN) %>%
+    mutate(preabd = rowSums(.[1:16])) %>% 
+    filter(preabd > 0) %>%
+    #filter(preabd > 0 & Dev == 0) %>%
+    dplyr::select(MRN) %>% nrow
+
 ###--- Antibodies present on admission
 
 preadmabd <- abd %>% 
@@ -226,6 +234,8 @@ preadmabd %>%
 
 
 ```
+
+Total number of admission associated with AB is `totadmabd`.
 
 
 
