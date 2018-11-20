@@ -83,14 +83,17 @@ democ <- demodf %>%
     # select relevant variables
     select(MRN, age, gender,race, death_date, admit_dt, discharge_dt) %>%
     # if not dead set as 0
-    mutate(death = ifelse(is.na(death_date), 0, 1),
+    mutate(
            MRN = as.integer(MRN),
+           death_date = as.POSIXct(death_date, format = "%m/%d/%Y %H:%M"),
            admit_dt = as.POSIXct(admit_dt, format = "%m/%d/%Y %H:%M"),
            discharge_dt = as.POSIXct(discharge_dt, format="%m/%d/%Y %H:%M")) %>%
+    mutate(
+           death = ifelse(is.na(death_date), 0, 1)
+    ) %>%
+    mutate(lastdate = if_else(is.na(death_date), discharge_dt, if_else(death_date - discharge_dt >= 0,death_date, discharge_dt))) %>%
     # only those with age and discharge date
     filter(!is.na(age) & !is.na(discharge_dt) & gender != "U")
-
-
 
 
 
@@ -104,11 +107,13 @@ tab1 <- democ %>%
                                 filter(CONTENT == "RBC") 
                             ) %>%  filter(!is.na(CONTENT)) %>%
                   # make sure Transfusion done between admissions for each MRN
-                  dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, TIMESTAMP) %>%
-                  filter(TIMESTAMP <= discharge_dt && admit_dt <= TIMESTAMP) %>% 
+                  dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, lastdate, TIMESTAMP) %>%
+                  filter(
+                         (TIMESTAMP <= (lastdate + 12*60*60)) & (admit_dt <= TIMESTAMP | (lastdate - 12 *60*60) <= TIMESTAMP)
+                         ) %>% 
                   group_by(MRN) %>%
                   summarise(RBCtrans = n())
-    ) %>%
+            ) %>%
 mutate(RBCtrans = ifelse(is.na(RBCtrans), 0, RBCtrans)) %>%
     # plasma transfusion
     left_join(
@@ -119,8 +124,10 @@ mutate(RBCtrans = ifelse(is.na(RBCtrans), 0, RBCtrans)) %>%
                                 filter(CONTENT == "SPEC PLASMA-MOD") 
                             ) %>%  filter(!is.na(CONTENT)) %>%
                   # make sure Transfusion done between admissions for each MRN
-                  dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, TIMESTAMP) %>%
-                  filter(TIMESTAMP <= discharge_dt && admit_dt <= TIMESTAMP) %>% 
+                  dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, lastdate, TIMESTAMP) %>%
+                  filter(
+                         (TIMESTAMP <= (lastdate + 12*60*60)) & (admit_dt <= TIMESTAMP | (lastdate - 12 *60*60) <= TIMESTAMP)
+                         ) %>% 
                   group_by(MRN) %>%
                   summarise(plasmatrans = n())
     ) %>%
@@ -133,8 +140,10 @@ mutate(plasmatrans = ifelse(is.na(plasmatrans), 0, plasmatrans)) %>%
                                 filter(CONTENT == "CRYO-TH") 
                             ) %>%  filter(!is.na(CONTENT)) %>%
                   # make sure Transfusion done between admissions for each MRN
-                  dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, TIMESTAMP) %>%
-                  filter(TIMESTAMP <= discharge_dt && admit_dt <= TIMESTAMP) %>% 
+                  dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, lastdate, TIMESTAMP) %>%
+                  filter(
+                         (TIMESTAMP <= (lastdate + 12*60*60)) & (admit_dt <= TIMESTAMP | (lastdate - 12 *60*60) <= TIMESTAMP)
+                         ) %>% 
                   group_by(MRN) %>%
                   summarise(cryop = n())
     ) %>%
@@ -147,9 +156,11 @@ mutate(cryop = ifelse(is.na(cryop), 0, cryop)) %>%
                                 filter(CONTENT == "PP") 
                             ) %>%  filter(!is.na(CONTENT)) %>%
                   # make sure Transfusion done between admissions for each MRN
-                  dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, TIMESTAMP) %>%
-                  filter(TIMESTAMP <= discharge_dt && admit_dt <= TIMESTAMP) %>% 
-                  group_by(MRN) %>%
+                  dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, lastdate, TIMESTAMP) %>%
+                  filter(
+                         (TIMESTAMP <= (lastdate + 12*60*60)) & (admit_dt <= TIMESTAMP | (lastdate - 12 *60*60) <= TIMESTAMP)
+                         ) %>% 
+              group_by(MRN) %>%
                   summarise(pp = n())
     ) %>%
 mutate(pp = ifelse(is.na(pp), 0, pp)) %>% 
@@ -170,6 +181,8 @@ mutate(antibody = ifelse(is.na(antibody), 0, 1)) %>%
            race = ifelse(race == "Black or African American", "African American", "Other"),
            antibody = ifelse(is.na(antibody), 0, antibody))  %>%
     mutate(antibody = ifelse(antibody == 1, "Anti+","Anti-")) 
+
+
 
 
 # remember there are duplicate people in the data
