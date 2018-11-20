@@ -52,7 +52,7 @@ names(dfm) <- c("Demo","Order","Antibody","Pregnancy","TransRxn","Trans")
 demname <- c("MRN","FRN","gender","race","age","event","weight","blood_type","pregnancy_status","admit_dt","discharge_dt","death_date","encounter_key")
 names(demodf) <- demname
 names(tns) <- c("MRN","ORD","ORD_DT","CANCEL_DT","CANCEL_R","CANCEL_P","complete_dt","STATUS")
-abdmrn <- abd %>% filter(Dev == 1) %>% dplyr::select(MRN, Dev) %>%
+abdmrn <- abd %>% filter(Dev >= 1) %>% dplyr::select(MRN, Dev) %>%
     rename(antibody = Dev)
 
 
@@ -95,7 +95,7 @@ tab1 <- democ %>%
                             ) %>%  filter(!is.na(CONTENT)) %>%
                   # make sure Transfusion done between admissions for each MRN
                   dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, TIMESTAMP) %>%
-                  filter(TIMESTAMP <= discharge_dt && admit_dt <= TIMESTAMP) %>% 
+                  filter(TIMESTAMP <= discharge_dt & admit_dt <= TIMESTAMP) %>% 
                   group_by(MRN) %>%
                   summarise(RBCtrans = n())
     ) %>%
@@ -110,7 +110,7 @@ mutate(RBCtrans = ifelse(is.na(RBCtrans), 0, RBCtrans)) %>%
                             ) %>%  filter(!is.na(CONTENT)) %>%
                   # make sure Transfusion done between admissions for each MRN
                   dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, TIMESTAMP) %>%
-                  filter(TIMESTAMP <= discharge_dt && admit_dt <= TIMESTAMP) %>% 
+                  filter(TIMESTAMP <= discharge_dt & admit_dt <= TIMESTAMP) %>% 
                   group_by(MRN) %>%
                   summarise(plasmatrans = n())
     ) %>%
@@ -124,7 +124,7 @@ mutate(plasmatrans = ifelse(is.na(plasmatrans), 0, plasmatrans)) %>%
                             ) %>%  filter(!is.na(CONTENT)) %>%
                   # make sure Transfusion done between admissions for each MRN
                   dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, TIMESTAMP) %>%
-                  filter(TIMESTAMP <= discharge_dt && admit_dt <= TIMESTAMP) %>% 
+                  filter(TIMESTAMP <= discharge_dt & admit_dt <= TIMESTAMP) %>% 
                   group_by(MRN) %>%
                   summarise(cryop = n())
     ) %>%
@@ -138,7 +138,7 @@ mutate(cryop = ifelse(is.na(cryop), 0, cryop)) %>%
                             ) %>%  filter(!is.na(CONTENT)) %>%
                   # make sure Transfusion done between admissions for each MRN
                   dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, TIMESTAMP) %>%
-                  filter(TIMESTAMP <= discharge_dt && admit_dt <= TIMESTAMP) %>% 
+                  filter((TIMESTAMP <= discharge_dt) & (admit_dt <= TIMESTAMP)) %>% 
                   group_by(MRN) %>%
                   summarise(pp = n())
     ) %>%
