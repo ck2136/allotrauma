@@ -290,6 +290,58 @@ expand.grid(`Number of RBC transfusion` = c('0', '1-5','6-10','11-20','>20'), an
 
 
 
+# - - - - - - - - - - - - - - - - - - - - - #
+# Table 4 Outcome analysis
+# - - - - - - - - - - - - - - - - - - - - - #
+
+
+## Time from Last RBC transfusion to 1st Antibody Development
+
+### Last RbC transfusion times from cohort
+library("data.table")
+tab4 <- democ %>%
+    # join the plasma data
+    left_join(
+              transf %>%
+                  filter(CONTENT == "RBC") 
+              ) %>%  filter(!is.na(CONTENT)) %>%
+# make sure Transfusion done between admissions for each MRN
+    dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, lastdate, TIMESTAMP) %>%
+    filter(
+       (TIMESTAMP <= (lastdate + 12*60*60)) & (admit_dt <= TIMESTAMP | (lastdate - 12 *60*60) <= TIMESTAMP)
+    ) %>% group_by(MRN) %>%
+    top_n(n=1) %>% 
+    distinct(MRN, .keep_all=TRUE) %>%
+    dplyr::select(MRN, TIMESTAMP) %>%
+    rename(ttime = TIMESTAMP)
+
+
+### Antibody Development Time
+
+abd  %>%
+    # select only those that have actually developed antibody during admission
+    filter(Dev == 1) %>% 
+    select(contains("during"), MRN, `date devo 1`, `date devo 2`, `date devo 3`) %>%
+    .[,-1] %>%
+    gather(., antibody, value, -MRN, -`date devo 1`, -`date devo 2`,-`date devo 3`) %>% 
+    filter(value == 1)  %>%
+    mutate(
+           `date devo 1` = as.POSIXct(`date devo 1`, format = "%m/%d/%Y"),
+           `date devo 2` = as.POSIXct(`date devo 2`, format = "%m/%d/%Y"),
+           `date devo 3` = as.POSIXct(`date devo 3`, format="%m/%d/%Y")) %>%
+    #mutate(abdevtime = if_else(
+                             #!is.na(`date devo 1`), `date devo 1`, 
+                             #if_else(!is.na(`date devo 2`), `date devo 2`,`date devo 3`)
+                             #))  %>%
+    #dplyr::select(MRN, abdevtime) %>%
+    left_join(tab4) %>% head
+
+
+
+
+
+
+
 
 
 
