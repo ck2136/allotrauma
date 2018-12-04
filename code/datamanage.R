@@ -318,7 +318,7 @@ tab4 <- democ %>%
 
 ### Antibody Development Time
 
-abd  %>%
+temp <- abd  %>%
     # select only those that have actually developed antibody during admission
     filter(Dev == 1) %>% 
     select(contains("during"), MRN, `date devo 1`, `date devo 2`, `date devo 3`) %>%
@@ -329,17 +329,112 @@ abd  %>%
            `date devo 1` = as.POSIXct(`date devo 1`, format = "%m/%d/%Y"),
            `date devo 2` = as.POSIXct(`date devo 2`, format = "%m/%d/%Y"),
            `date devo 3` = as.POSIXct(`date devo 3`, format="%m/%d/%Y")) %>%
-    #mutate(abdevtime = if_else(
-                             #!is.na(`date devo 1`), `date devo 1`, 
-                             #if_else(!is.na(`date devo 2`), `date devo 2`,`date devo 3`)
-                             #))  %>%
-    #dplyr::select(MRN, abdevtime) %>%
-    left_join(tab4) %>% head
+    rename(adt = `date devo 1`) %>%
+    dplyr::select(MRN, adt)
+
+
+ttimetab <- democ %>%
+    # join the plasma data
+    left_join(
+              transf %>%
+                  filter(CONTENT == "RBC") 
+              ) %>%  filter(!is.na(CONTENT)) %>%
+    left_join(
+              temp
+            ) %>%  
+# make sure Transfusion done between admissions for each MRN
+    dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, lastdate, TIMESTAMP,adt) %>%
+    filter(
+       (TIMESTAMP <= (lastdate + 12*60*60)) & (admit_dt <= TIMESTAMP | (lastdate - 12 *60*60) <= TIMESTAMP)
+       ) %>% 
+    mutate(adtime = as.numeric(adt - TIMESTAMP)/(60*24)) %>%
+    filter(is.na(adtime) | adtime > 0) %>% 
+    group_by(MRN) %>%
+    top_n(n=1) %>% 
+    distinct(MRN, .keep_all=TRUE) %>%
+    select(MRN, adtime, TIMESTAMP, adt) 
+
+## A) Statistics
+summary(ttimetab$adtime)
 
 
 
 
 
+
+## B) Time from Last RBC transfusion to first of 2 consec negative antibody screen without any RBC transfusion in middle (median, range, stats
+
+# patients that didn't have antibody developed
+## function to get opposite of %in%
+"%ni%" <- Negate("%in%")
+
+
+# Patient list that didn't develop antibody
+noanti <- democ %>%
+    filter(MRN %ni% (abd %>%
+                     filter(Dev == 1) %>%
+                     select(MRN) %>% unlist %>% as.vector)) %>%
+    select(MRN) %>%
+    unlist %>% as.vector
+
+
+# time Test for Antibody for those that didn't have antibody developed!
+
+tab4b <- left_join(
+      tns %>%
+          mutate(
+                 ORD_DT = as.POSIXct(ORD_DT, format = "%m/%d/%Y %H:%M"),
+                 complete_dt = as.POSIXct(complete_dt, format = "%m/%d/%Y %H:%M")
+                 ) %>%
+      filter(MRN %in% (noanti)
+             )  %>%
+      group_by(MRN) %>%
+      top_n(-1, ORD_DT) %>% 
+      #distinct(MRN, .keep_all = TRUE) %>%
+      select(MRN, ORD_DT) %>% 
+      rename(negtime1 = ORD_DT),
+
+      tns %>%
+          mutate(
+                 ORD_DT = as.POSIXct(ORD_DT, format = "%m/%d/%Y %H:%M"),
+                 complete_dt = as.POSIXct(complete_dt, format = "%m/%d/%Y %H:%M")
+                 ) %>%
+      filter(MRN %in% (noanti)
+             )  %>%
+      group_by(MRN) %>%
+      top_n(-2, ORD_DT) %>% 
+      arrange(MRN, desc(ORD_DT)) %>%
+      distinct(MRN, .keep_all = TRUE) %>%
+      select(MRN, ORD_DT)  %>%
+      rename(negtime2 = ORD_DT)
+  ) 
+
+
+
+
+
+# last transfusion before RBC transfusion time
+
+
+ttimetabb <- democ %>%
+    # join the plasma data
+    left_join(
+              transf %>%
+                  filter(CONTENT == "RBC") 
+              ) %>%  filter(!is.na(CONTENT)) %>%
+# make sure Transfusion done between admissions for each MRN
+    dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, lastdate, TIMESTAMP,adt) %>%
+    filter(
+       (TIMESTAMP <= (lastdate + 12*60*60)) & (admit_dt <= TIMESTAMP | (lastdate - 12 *60*60) <= TIMESTAMP)
+       ) %>% 
+    mutate(adtime = as.numeric(adt - TIMESTAMP)/(60*24)) %>%
+    filter(is.na(adtime) | adtime > 0) %>% 
+    group_by(MRN) %>%
+    top_n(n=1) %>% 
+    distinct(MRN, .keep_all=TRUE) %>%
+    select(MRN, adtime, TIMESTAMP, adt) 
+
+    
 
 
 
