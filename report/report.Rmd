@@ -562,6 +562,19 @@ tab4bfin %>%
     select(contains("trans"), contains("Ant1")) %>%
     summary %>%
     .[,2:4] %>%
+    cbind(
+          ttimetab %>%
+              select(contains('adtime')) %>%
+              summary %>%
+              .[,2]
+          ) %>%
+    data.frame %>%
+    select(4,1,2,3) %>%
+    rename(RBCtoFA = 1,
+           RBCtoFNS = 2,
+           RBCtoSNS = 3,
+           Anti1Anti2 = 4
+    ) %>%
     kable(., booktabs = TRUE, format="latex", align=c("l","c"), row.names=FALSE, caption="Transfusion to Antibody Development Time")   %>%
     kable_styling(position = "center") %>%
     gsub(pattern="\\[H\\]","\\[h\\]", x=.)
