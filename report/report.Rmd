@@ -18,7 +18,7 @@ output:
 
 ---
 
-## Tables 
+# Descriptive Statistics
 
 ```{r global_options, include=FALSE}
 knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='Figs/',
@@ -263,7 +263,7 @@ antinegcount <- tab1 %>% filter(antibody == "Anti-") %>% nrow
                    factorVars = c("gender","death"), strata = c("antibody"), data=.) %>%
     print(., quote = FALSE, noSpace = TRUE, printToggle = FALSE, varLabels = TRUE, nonnormal = c("los","RBCtrans","plasmatrans","cryop","pp","ntest")) %>%
     .[, 1:3] %>%
-    kable(., booktabs = TRUE, format="latex", align=c("c","c","r","r") ,caption = "Demographics")  %>%
+    kable(., booktabs = TRUE, format="latex", align=c("c","c","r","r") ,caption = "Clinical and Demographic Characteristics of Study Population")  %>%
     kable_styling(latex_options = c("scale_down"))  %>%
     #gsub(pattern="Age (years) (mean (sd))", "Age (years)", x=.) %>%
     gsub(pattern=" \\& p\\\\\\\\", paste0(" \\& \\$p^a\\$ \\\\\\\\ \\& (n = ",antinegcount ,") \\& (n = ",antiposcount ,") \\& \\\\\\\\"), x=.) %>%
@@ -275,6 +275,7 @@ antinegcount <- tab1 %>% filter(antibody == "Anti-") %>% nrow
 
 ```
 
+# Main results
 
 ```{r tab2antspec, results='asis'}
 library('tidyr')
@@ -323,7 +324,7 @@ preadmabd %>%
     rename(Antibody = antibody,
             `Pre Admission` = 2,
             `Post Admission` = 3) %>%
-    kable(., booktabs = TRUE, format="latex", align=c("l","c") ,caption = "Antibody Specificity") %>%
+    kable(., booktabs = TRUE, format="latex", align=c("l","c") ,caption = "Antibody  Characteristics: Antibody Specificity") %>%
     kable_styling(position = "center") %>%
     gsub(pattern="\\[H\\]","\\[h\\]", x=.)
 
@@ -359,8 +360,213 @@ expand.grid(`Number of RBC transfusion` = c('0', '1-5','6-10','11-20','>20'), an
 
 ```
 
+```{r tab4data, include=FALSE}
+tab4 <- democ %>%
+    # join the plasma data
+    left_join(
+              transf %>%
+                  filter(CONTENT == "RBC") 
+              ) %>%  filter(!is.na(CONTENT)) %>%
+# make sure Transfusion done between admissions for each MRN
+    dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, lastdate, TIMESTAMP) %>%
+    filter(
+       (TIMESTAMP <= (lastdate + 12*60*60)) & (admit_dt <= TIMESTAMP | (lastdate - 12 *60*60) <= TIMESTAMP)
+    ) %>% group_by(MRN) %>%
+    top_n(n=1) %>% 
+    distinct(MRN, .keep_all=TRUE) %>%
+    dplyr::select(MRN, TIMESTAMP) %>%
+    rename(ttime = TIMESTAMP)
 
-## Table 4: Outcomes analysis
+
+### Antibody Development Time
+
+temp <- abd  %>%
+    # select only those that have actually developed antibody during admission
+    filter(Dev > 0) %>% 
+    select(contains("during"), MRN, `date devo 1`, `date devo 2`, `date devo 3`) %>%
+    .[,-1] %>%
+    gather(., antibody, value, -MRN, -`date devo 1`, -`date devo 2`,-`date devo 3`) %>% 
+    filter(value == 1)  %>%
+    mutate(
+           `date devo 1` = as.POSIXct(`date devo 1`, format = "%m/%d/%Y"),
+           `date devo 2` = as.POSIXct(`date devo 2`, format = "%m/%d/%Y"),
+           `date devo 3` = as.POSIXct(`date devo 3`, format="%m/%d/%Y")) %>%
+    rename(adt = `date devo 1`) %>%
+    dplyr::select(MRN, adt) %>%
+    distinct(MRN, .keep_all=TRUE)
+
+
+ttimetab <- democ %>%
+    # join the plasma data
+    left_join(
+              transf %>%
+                  filter(CONTENT == "RBC") 
+              ) %>%  filter(!is.na(CONTENT)) %>%
+    left_join(
+              temp
+            ) %>%  
+# make sure Transfusion done between admissions for each MRN
+    dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, lastdate, TIMESTAMP,adt) %>%
+    filter(
+       (TIMESTAMP <= (lastdate + 12*60*60)) & (admit_dt <= TIMESTAMP | (lastdate - 12 *60*60) <= TIMESTAMP)
+       ) %>% 
+    mutate(adtime = as.numeric(adt - TIMESTAMP)/(60*24)) %>%
+    filter(is.na(adtime) | adtime > 0) %>% 
+    #filter(adtime < 0) %>% 
+    group_by(MRN) %>%
+    top_n(n=-1) %>% 
+    distinct(MRN, .keep_all=TRUE) %>%
+    select(MRN, adtime, TIMESTAMP, adt) 
+
+
+"%ni%" <- Negate("%in%")
+
+### Patient list that didn't develop antibody
+noanti <- democ %>%
+    filter(MRN %ni% (abd %>%
+                     filter(Dev == 1) %>%
+                     select(MRN) %>% unlist %>% as.vector)) %>%
+    select(MRN) %>%
+    unlist %>% as.vector
+
+### Patient list that didn develop antibody
+antimrn <- abd %>%
+    filter(Dev == 1) %>%
+    select(MRN) %>% unlist %>% as.vector
+
+
+# time Test for Antibody for those that didn't have antibody developed!
+
+neganttbl <- left_join(
+      tns %>%
+          mutate(
+                 ORD_DT = as.POSIXct(ORD_DT, format = "%m/%d/%Y %H:%M", tz="UTC"),
+                 complete_dt = as.POSIXct(complete_dt, format = "%m/%d/%Y %H:%M", tz="UTC")
+                 ) %>%
+      filter(MRN %in% (noanti)
+             )  %>%
+      group_by(MRN) %>%
+      top_n(-1, ORD_DT) %>% 
+      distinct(MRN, .keep_all = TRUE) %>%
+      select(MRN, ORD_DT) %>% 
+      rename(negtime1 = ORD_DT),
+
+      tns %>%
+          mutate(
+                 ORD_DT = as.POSIXct(ORD_DT, format = "%m/%d/%Y %H:%M", tz="UTC"),
+                 complete_dt = as.POSIXct(complete_dt, format = "%m/%d/%Y %H:%M", tz="UTC")
+                 ) %>%
+      filter(MRN %in% (noanti)
+             )  %>%
+      group_by(MRN) %>%
+      top_n(-2, ORD_DT) %>% 
+      arrange(MRN, desc(ORD_DT)) %>%
+      distinct(MRN, .keep_all = TRUE) %>%
+      select(MRN, ORD_DT)  %>%
+      rename(negtime2 = ORD_DT)
+  ) 
+
+### IMPORTANT THE TIMEZONES SHOULD BE THE SAME ACROSS ALL DATAFILES THIS COULD F UP THE CALCULATIONS
+
+negantgroup <- neganttbl %>%
+    left_join(
+              transf %>%
+                  filter(CONTENT == "RBC")  %>%
+                  group_by(MRN) %>%
+                  arrange(desc(TIMESTAMP))  
+    ) %>%
+    select(MRN, negtime1,negtime2, TIMESTAMP) %>%
+    filter(TIMESTAMP < negtime1) %>%
+    group_by(MRN) %>%
+    arrange(desc(TIMESTAMP)) %>%
+    distinct(MRN, .keep_all = TRUE) %>%
+    mutate(
+           antipos = 0,
+           transToAnti1 = difftime(negtime1, TIMESTAMP, units="days"),
+           transToAnti2 = difftime(negtime2, TIMESTAMP, units="days"),
+           Ant1Ant2 = difftime(negtime2, negtime1, units="days")
+    ) 
+
+## Part 2: Those that did have a positive antibody. 
+## Since these people had a antibody developed we need find first 2 consecutive negative antibody tests that occur 
+## possible scenarios are 
+    # 1) Anti- Anti+ Anti- : should be excluded
+    # 2) Anti+ Anti+ Anti- : should be included
+    # 3) Anti- Anti+ Anti- : should be excluded
+    # 4) Anti- Anti+ Anti+ : should be included
+
+# Since the Antibody development chart only shows the date... we just need to match the date (not the time) 
+
+temp <- tns %>%
+    mutate(
+           ORD_DT = as.POSIXct(ORD_DT, format = "%m/%d/%Y %H:%M", tz="UTC"),
+           complete_dt = as.POSIXct(complete_dt, format = "%m/%d/%Y %H:%M", tz="UTC")
+           ) %>%
+    filter(MRN %in% (antimrn)
+           )  %>%
+    left_join(
+              ttimetab %>% 
+                  select(adt) %>% 
+                  mutate(adt = as.Date(adt))
+    )  %>%
+    filter(!is.na(adt)) %>%
+    mutate(abspos = if_else(adt < as.Date(ORD_DT), 1, 
+                            if_else(adt == as.Date(ORD_DT) , 2, 3))) %>%
+    # merge in the transfusion dates before antibody development 
+    left_join(
+              ttimetab %>% 
+                  select(TIMESTAMP) %>% 
+                  rename(ttime =TIMESTAMP)
+    ) %>% 
+    filter(ORD_DT > ttime) %>% 
+    group_by(MRN) %>%
+    arrange(MRN, ORD_DT) %>%
+    mutate(absposlead = lead(abspos)) %>%
+    select(MRN, ORD_DT, adt, abspos, absposlead, ttime) 
+
+
+postantgroup <- left_join(
+          temp %>%
+              group_by(MRN) %>%
+              top_n(-1, ORD_DT) %>% 
+              distinct(MRN, .keep_all = TRUE) %>%
+              select(MRN, ORD_DT) %>% 
+              rename(negtime1 = ORD_DT),
+          temp %>%
+              group_by(MRN) %>%
+              top_n(-2, ORD_DT) %>% 
+              arrange(MRN, desc(ORD_DT)) %>%
+              distinct(MRN, .keep_all = TRUE) %>%
+              select(MRN, ORD_DT,ttime)  %>%
+              rename(negtime2 = ORD_DT,
+              TIMESTAMP = ttime)
+        )  %>%
+    mutate(
+           antipos = 1,
+           transToAnti1 = difftime(negtime1, TIMESTAMP, units="days"),
+           transToAnti2 = difftime(negtime2, TIMESTAMP, units="days"),
+           Ant1Ant2 = difftime(negtime2, negtime1, units="days")
+    ) 
+
+tab4bfin <- bind_rows(postantgroup, negantgroup) %>%
+    mutate(
+           transToAnti1 = as.numeric(transToAnti1),
+           transToAnti2 = as.numeric(transToAnti2),
+           Ant1Ant2 = as.numeric(Ant1Ant2)
+    )
+
+```
+
+```{r tab4out, results='asis'}
+tab4bfin %>% 
+    select(contains("trans"), contains("Ant1")) %>%
+    summary %>%
+    .[,2:4] %>%
+    kable(., booktabs = TRUE, format="latex", align=c("l","c"), row.names=FALSE, caption="Transfusion to Antibody Development Time")   %>%
+    kable_styling(position = "center") %>%
+    gsub(pattern="\\[H\\]","\\[h\\]", x=.)
+```
+
 
 ## Supplemental Figure 1: Antibody Frequency by Gender
 

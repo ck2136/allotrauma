@@ -3,7 +3,7 @@
 # Created by:       C.K.
 # Created on:       11/07/2018
 # Modified by:      C.K.
-# Modified on: 		2018 Dec 05
+# Modified on: 		2018 Dec 21
 # - - - - - - - - - - - - - - - - - - - - - #
 
 
@@ -32,11 +32,9 @@ demodf <- import("../data/raw/DEMO_RQ_DEIDENTIFIED.csv")
 #---- rename things
 # - - - - - - - - - - - - - - - - - - - - - #
 names(dfm) <- c("Demo","Order","Antibody","Pregnancy","TransRxn","Trans")
-
 demname <- c("MRN","FRN","pid","gender","race","age","event","weight","blood_type","pregnancy_status","admit_dt","discharge_dt","death_date","encounter_key")
 names(dfm$Demo) <- demname
 demname <- c("MRN","FRN","gender","race","age","event","weight","blood_type","pregnancy_status","admit_dt","discharge_dt","death_date","encounter_key")
-
 names(demodf) <- demname
 
 # Demographic table part 1
@@ -416,7 +414,9 @@ neganttbl <- left_join(
       filter(MRN %in% (noanti)
              )  %>%
       group_by(MRN) %>%
+      # get the top 2 earliest time
       top_n(-2, ORD_DT) %>% 
+      # arrange by descending to get the second from the last
       arrange(MRN, desc(ORD_DT)) %>%
       distinct(MRN, .keep_all = TRUE) %>%
       select(MRN, ORD_DT)  %>%
@@ -513,9 +513,10 @@ tab4bfin <- bind_rows(postantgroup, negantgroup) %>%
     )
 
 tab4bfin %>% 
-    lapply(., summary)
+    lapply(., summary) 
 
 tab4bfin %>% data.frame %>% head
+
 
 ### IMPORTANT THE TIMEZONES SHOULD BE THE SAME ACROSS ALL DATAFILES THIS COULD F UP THE CALCULATIONS
 
