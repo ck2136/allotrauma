@@ -531,14 +531,14 @@ ttimetab <- democ %>%
 ### Patient list that didn't develop antibody
 noanti <- democ %>%
     filter(MRN %ni% (abd %>%
-                     filter(Dev == 1) %>%
+                     filter(Dev >= 1) %>%
                      select(MRN) %>% unlist %>% as.vector)) %>%
     select(MRN) %>%
     unlist %>% as.vector
 
 ### Patient list that didn develop antibody
 antimrn <- abd %>%
-    filter(Dev == 1) %>%
+    filter(Dev >= 1) %>%
     select(MRN) %>% unlist %>% as.vector
 
 

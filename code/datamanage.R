@@ -3,7 +3,7 @@
 # Created by:       C.K.
 # Created on:       11/07/2018
 # Modified by:      C.K.
-# Modified on: 		2018 Dec 21
+# Modified on: 		2018 Dec 22
 # - - - - - - - - - - - - - - - - - - - - - #
 
 
@@ -364,7 +364,7 @@ tab4 <- democ %>%
               transf %>%
                   filter(CONTENT == "RBC") 
               ) %>%  filter(!is.na(CONTENT)) %>%
-# make sure Transfusion done between admissions for each MRN
+    # make sure Transfusion done between admissions for each MRN
     dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, lastdate, TIMESTAMP) %>%
     filter(
        (TIMESTAMP <= (lastdate + 12*60*60)) & (admit_dt <= TIMESTAMP | (lastdate - 12 *60*60) <= TIMESTAMP)
@@ -447,14 +447,14 @@ ttimetab %>%
 ### Patient list that didn't develop antibody
 noanti <- democ %>%
     filter(MRN %ni% (abd %>%
-                     filter(Dev == 1) %>%
+                     filter(Dev >= 1) %>%
                      select(MRN) %>% unlist %>% as.vector)) %>%
     select(MRN) %>%
     unlist %>% as.vector
 
-### Patient list that didn develop antibody
+### Patient list that did develop antibody
 antimrn <- abd %>%
-    filter(Dev == 1) %>%
+    filter(Dev >= 1) %>%
     select(MRN) %>% unlist %>% as.vector
 
 
