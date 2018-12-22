@@ -341,13 +341,15 @@ ttimetab <- democ %>%
     left_join(
               temp
             ) %>%  
-# make sure Transfusion done between admissions for each MRN
+    # make sure Transfusion done between admissions for each MRN
     dplyr::select(CONTENT, MRN, admit_dt, discharge_dt, lastdate, TIMESTAMP,adt) %>%
     filter(
        (TIMESTAMP <= (lastdate + 12*60*60)) & (admit_dt <= TIMESTAMP | (lastdate - 12 *60*60) <= TIMESTAMP)
        ) %>% 
     mutate(adtime = as.numeric(adt - TIMESTAMP)/(60*24)) %>%
-    filter(is.na(adtime) | adtime > 0) %>% 
+    # filter out antibody development that is less than 0.5 days before RBC transfusion
+    filter(is.na(adtime) | adtime > 0.5) %>% 
+    #filter(is.na(adtime) | adtime > 0) %>% 
     #filter(adtime < 0) %>% 
     group_by(MRN) %>%
     top_n(n=-1) %>% 
@@ -361,7 +363,12 @@ ttimetab <- democ %>%
 ## Based on the check I've made the people in the above list do not have transfusions dates that are prior to the 1st day of antibody development
 
 ## A) Statistics
-summary(ttimetab$adtime)
+ttimetab %>%
+    ungroup %>%
+    select(adtime)  %>%
+    data.frame %>%
+    psych::describe(.) %>%
+    str
 
 
 
@@ -390,6 +397,7 @@ antimrn <- abd %>%
     select(MRN) %>% unlist %>% as.vector
 
 
+
 # time Test for Antibody for those that didn't have antibody developed!
 
 neganttbl <- left_join(
@@ -400,6 +408,15 @@ neganttbl <- left_join(
                  ) %>%
       filter(MRN %in% (noanti)
              )  %>%
+      # join transfusion data to exclude screen times < 12 hours before transfusion
+      left_join(
+                transf %>%
+                    filter(CONTENT == "RBC" & MRN %in% noanti ) %>% 
+                    select(MRN, TIMESTAMP)
+      ) %>%  
+      filter(
+             difftime(ORD_DT, TIMESTAMP, units="days") > 0.5
+             ) %>% 
       group_by(MRN) %>%
       top_n(-1, ORD_DT) %>% 
       distinct(MRN, .keep_all = TRUE) %>%
@@ -413,6 +430,15 @@ neganttbl <- left_join(
                  ) %>%
       filter(MRN %in% (noanti)
              )  %>%
+      # join transfusion data to exclude screen times < 12 hours before transfusion
+      left_join(
+                transf %>%
+                    filter(CONTENT == "RBC" & MRN %in% noanti ) %>% 
+                    select(MRN, TIMESTAMP)
+      ) %>%  
+      filter(
+             difftime(ORD_DT, TIMESTAMP, units="days") > 0.5
+             ) %>% 
       group_by(MRN) %>%
       # get the top 2 earliest time
       top_n(-2, ORD_DT) %>% 
@@ -425,24 +451,33 @@ neganttbl <- left_join(
 
 ### IMPORTANT THE TIMEZONES SHOULD BE THE SAME ACROSS ALL DATAFILES THIS COULD F UP THE CALCULATIONS
 
+### For this table we also have people that have had only 1 antibody screen therefore will have the same exact screen time as the first screen time. We need to exclude these people
+
 negantgroup <- neganttbl %>%
+    filter(
+           negtime2 !=  negtime1
+    ) %>% 
     left_join(
               transf %>%
                   filter(CONTENT == "RBC")  %>%
                   group_by(MRN) %>%
                   arrange(desc(TIMESTAMP))  
-    ) %>%
+    ) %>% 
     select(MRN, negtime1,negtime2, TIMESTAMP) %>%
-    filter(TIMESTAMP < negtime1) %>%
+    filter(
+           difftime(negtime1, TIMESTAMP) > 0.5
+           #TIMESTAMP < negtime1
+           ) %>%
     group_by(MRN) %>%
     arrange(desc(TIMESTAMP)) %>%
-    distinct(MRN, .keep_all = TRUE) %>%
+    top_n(-1, TIMESTAMP) %>%  
+    #distinct(MRN, .keep_all = TRUE) %>% 
     mutate(
            antipos = 0,
            transToAnti1 = difftime(negtime1, TIMESTAMP, units="days"),
            transToAnti2 = difftime(negtime2, TIMESTAMP, units="days"),
            Ant1Ant2 = difftime(negtime2, negtime1, units="days")
-    ) 
+    )  
 
 ## Part 2: Those that did have a positive antibody. 
 ## Since these people had a antibody developed we need find first 2 consecutive negative antibody tests that occur 
@@ -475,7 +510,11 @@ temp <- tns %>%
                   select(TIMESTAMP) %>% 
                   rename(ttime =TIMESTAMP)
     ) %>% 
-    filter(ORD_DT > ttime) %>% 
+    # select only those times 
+    filter(
+           difftime(ORD_DT,ttime, units='days') > 0.5
+           #ORD_DT > ttime
+           ) %>% 
     group_by(MRN) %>%
     arrange(MRN, ORD_DT) %>%
     mutate(absposlead = lead(abspos)) %>%
@@ -503,7 +542,10 @@ postantgroup <- left_join(
            transToAnti1 = difftime(negtime1, TIMESTAMP, units="days"),
            transToAnti2 = difftime(negtime2, TIMESTAMP, units="days"),
            Ant1Ant2 = difftime(negtime2, negtime1, units="days")
-    ) 
+    )  %>%
+    filter(
+           transToAnti1 != transToAnti2
+    )
 
 tab4bfin <- bind_rows(postantgroup, negantgroup) %>%
     mutate(
@@ -512,16 +554,74 @@ tab4bfin <- bind_rows(postantgroup, negantgroup) %>%
            Ant1Ant2 = as.numeric(Ant1Ant2)
     )
 
+negantgroup %>%
+#postantgroup %>%
+    mutate(
+           transToAnti1 = as.numeric(transToAnti1),
+           transToAnti2 = as.numeric(transToAnti2),
+           Ant1Ant2 = as.numeric(Ant1Ant2)
+    ) %>%
+    summary
+
 tab4bfin %>% 
     lapply(., summary) 
 
+sumstats <- c('min','quantile',)
+myfunction <- function(summaries) {
+    data.frame()
+}
+
 tab4bfin %>% data.frame %>% head
+
+library("purrr")
+
+map_dfr(tab4bfin, mean) %>% data.frame
+
+myfunction <- function(data){
+    data.frame(
+               mean = mean(data, na.rm=TRUE),
+               q1 = quantile(data,0.25, na.rm=TRUE),
+               median = median(data, na.rm=TRUE),
+               q3 = quantile(data,0.75, na.rm=TRUE),
+               max = max(data, na.rm=TRUE),
+               min = min(data, na.rm=TRUE),
+               n = length(data)
+    )
+}
+
+map_dfr(tab4bfin %>% 
+            ungroup %>% 
+            select(contains("trans"), contains("Ant1")), 
+        myfunction) %>% 
+    t(.)  %>%
+    cbind(. ,
+              map_dfr( ttimetab %>%
+                        ungroup %>%
+                        select(contains("adtime")),
+                      myfunction)  %>%
+              t(.)
+    ) %>%
+    data.frame %>%
+    dplyr::select(4,1,2,3) %>%
+    rename("RBC to FA"= 1,
+           "RBC to 1NS" = 2,
+           "RBC to 2NS" = 3,
+           "Time F/S NS" = 4
+    ) %>%
+    kable(., 
+          sep.cal='',
+          booktabs = TRUE,
+          digits=c(2,2,2,2)
+    )
+
 
 
 ### IMPORTANT THE TIMEZONES SHOULD BE THE SAME ACROSS ALL DATAFILES THIS COULD F UP THE CALCULATIONS
 
 
-## Checck for  errors
+# - - - - - - - - - - - - - - - - - - - - - #
+# Error Check
+# - - - - - - - - - - - - - - - - - - - - - #
 
 tab4bfin %>% 
     filter(MRN %in% c(488920,510773,562313))
