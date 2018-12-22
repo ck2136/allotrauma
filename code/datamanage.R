@@ -27,6 +27,24 @@ transf <- import("../data/raw/TBICU_BLODD.xlsx")
 demodf <- import("../data/raw/DEMO_RQ_DEIDENTIFIED.csv")
 
 
+library("purrr")
+
+# - - - - - - - - - - - - - - - - - - - - - #
+#---- Load Custom Functions
+# - - - - - - - - - - - - - - - - - - - - - #
+
+myfunction <- function(data){
+    data.frame(
+               mean = mean(data, na.rm=TRUE),
+               q1 = quantile(data,0.25, na.rm=TRUE),
+               median = median(data, na.rm=TRUE),
+               q3 = quantile(data,0.75, na.rm=TRUE),
+               max = max(data, na.rm=TRUE),
+               min = min(data, na.rm=TRUE),
+               range = max(data, na.rm=TRUE)-min(data, na.rm=TRUE),
+               n = length(data)
+    )
+}
 
 # - - - - - - - - - - - - - - - - - - - - - #
 #---- rename things
@@ -211,16 +229,59 @@ tab1 %>%
 
 ##- A
 
-###--- number of patients admitted with history of antibody formation
-library('tidyr')
+###--- a. Median number of antibody developed during hospitalization among those that have antibody developed
+library(tidyr)
+tab2aa <- map_dfr(
+                  abd %>%
+                      select(Dev) ,
+                  myfunction
+    )
+    
 
-abd %>% 
+library('tidyr')
+###--- b. How many developed new antibody?
+###--- b.i How many new antibodies?
+patwanth <- abd %>% 
     select(contains("pre Y=1"),Dev,MRN) %>%
     mutate(preabd = rowSums(.[1:16])) %>% 
-    filter(preabd > 0) %>%
+    filter(preabd > 0 & Dev > 0) %>%
     #filter(preabd > 0 & Dev == 0) %>%
-    dplyr::select(MRN) %>% nrow
+    dplyr::select(MRN) %>% unlist %>% as.vector
 
+
+tab2ab <- map_dfr(
+        abd %>%
+            filter(MRN %in% patwanth) %>% 
+            select(Dev) 
+        , myfunction
+)
+
+###--- c. How many developed new antibody without history of antibody
+###--- c.i How many new antibodies
+tab2ac <- map_dfr(
+        abd %>%
+            filter(MRN %ni% patwanth) %>% 
+            select(Dev) 
+        , myfunction
+)
+
+
+rbind(
+      tab2aa,
+      tab2ab,
+      tab2ac
+) %>% 
+    t %>%
+    data.frame %>%
+    rename("Median # Antibody during H" = 1,
+           "New Ant w H" = 2,
+           "New Ant w/o H" = 3
+    )
+
+
+
+
+##-- B
 ###--- Antibodies present on admission
 
 preadmabd <- abd %>% 
@@ -240,7 +301,7 @@ preadmabd <- abd %>%
 library(tidyr)
 postadmabd <- abd  %>%
     # select only those that have actually developed antibody during admission
-    filter(Dev == 1) %>% 
+    filter(Dev >= 1) %>% 
     select(contains("during")) %>%
     .[,-1] %>%
     gather(., antibody, value) %>% 
@@ -563,19 +624,8 @@ negantgroup %>%
     ) %>%
     summary
 
-tab4bfin %>% 
-    lapply(., summary) 
-
-sumstats <- c('min','quantile',)
-myfunction <- function(summaries) {
-    data.frame()
-}
-
-tab4bfin %>% data.frame %>% head
 
 library("purrr")
-
-map_dfr(tab4bfin, mean) %>% data.frame
 
 myfunction <- function(data){
     data.frame(
@@ -585,6 +635,7 @@ myfunction <- function(data){
                q3 = quantile(data,0.75, na.rm=TRUE),
                max = max(data, na.rm=TRUE),
                min = min(data, na.rm=TRUE),
+               range = max(data, na.rm=TRUE)-min(data, na.rm=TRUE),
                n = length(data)
     )
 }

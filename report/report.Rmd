@@ -20,9 +20,22 @@ output:
 
 # Descriptive Statistics
 
-```{r global_options, include=FALSE}
+```{r global_options, echo=FALSE}
 knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='Figs/',
                       echo=FALSE, warning=FALSE, message=FALSE)
+myfunction <- function(data){
+    data.frame(
+               mean = mean(data, na.rm=TRUE),
+               q1 = quantile(data,0.25, na.rm=TRUE),
+               median = median(data, na.rm=TRUE),
+               q3 = quantile(data,0.75, na.rm=TRUE),
+               max = max(data, na.rm=TRUE),
+               min = min(data, na.rm=TRUE),
+               range = max(data, na.rm=TRUE)-min(data, na.rm=TRUE),
+               n = length(data)
+    )
+}
+
 ```
 
 ```{r datasetup, results='asis'}
@@ -277,6 +290,80 @@ antinegcount <- tab1 %>% filter(antibody == "Anti-") %>% nrow
 
 # Main results
 
+```{r tab2A, results='asis'}
+"%ni%" <- Negate("%in%")
+myfunction <- function(data){
+    data.frame(
+               mean = mean(data, na.rm=TRUE),
+               q1 = quantile(data,0.25, na.rm=TRUE),
+               median = median(data, na.rm=TRUE),
+               q3 = quantile(data,0.75, na.rm=TRUE),
+               max = max(data, na.rm=TRUE),
+               min = min(data, na.rm=TRUE),
+               range = max(data, na.rm=TRUE)-min(data, na.rm=TRUE),
+               n = length(data)
+    )
+}
+##- A
+###--- a. Median number of antibody developed during hospitalization among those that have antibody developed
+library(tidyr)
+tab2aa <- map_dfr(
+                  abd %>%
+                      select(Dev) ,
+                  myfunction
+    )
+    
+
+library('tidyr')
+###--- b. How many developed new antibody?
+###--- b.i How many new antibodies?
+patwanth <- abd %>% 
+    select(contains("pre Y=1"),Dev,MRN) %>%
+    mutate(preabd = rowSums(.[1:16])) %>% 
+    filter(preabd > 0 & Dev > 0) %>%
+    #filter(preabd > 0 & Dev == 0) %>%
+    dplyr::select(MRN) %>% unlist %>% as.vector
+
+
+tab2ab <- map_dfr(
+        abd %>%
+            filter(MRN %in% patwanth) %>% 
+            select(Dev) 
+        , myfunction
+)
+
+###--- c. How many developed new antibody without history of antibody
+###--- c.i How many new antibodies
+tab2ac <- map_dfr(
+        abd %>%
+            filter(MRN %ni% patwanth) %>% 
+            select(Dev) 
+        , myfunction
+)
+
+
+rbind(
+      tab2aa,
+      tab2ab,
+      tab2ac
+) %>% 
+    t %>%
+    data.frame %>%
+    rename("New Ant dur hosp" = 1,
+           "New Ant w H" = 2,
+           "New Ant w/o H" = 3
+    ) %>%
+    kable(., booktabs = TRUE, 
+          format="latex", 
+          align=c("c","c") ,
+          linesep="",
+          digits=2,
+          #row.names=FALSE,
+          caption = "Antibody  Characteristics: Number of antibodies") %>% 
+    kable_styling(position = "center")
+```
+
+
 ```{r tab2antspec, results='asis'}
 library('tidyr')
 
@@ -307,7 +394,7 @@ preadmabd <- abd %>%
 library(tidyr)
 postadmabd <- abd  %>%
     # select only those that have actually developed antibody during admission
-    filter(Dev == 1) %>% 
+    filter(Dev >= 1) %>% 
     select(contains("during")) %>%
     .[,-1] %>%
     gather(., antibody, value) %>% 
@@ -324,7 +411,11 @@ preadmabd %>%
     rename(Antibody = antibody,
             `Pre Admission` = 2,
             `Post Admission` = 3) %>%
-    kable(., booktabs = TRUE, format="latex", align=c("l","c") ,caption = "Antibody  Characteristics: Antibody Specificity") %>%
+    kable(., 
+          booktabs = TRUE, 
+          format="latex", 
+          align=c("l","c","c") ,
+          caption = "Antibody  Characteristics: Antibody Specificity") %>%
     kable_styling(position = "center") %>%
     gsub(pattern="\\[H\\]","\\[h\\]", x=.)
 
@@ -354,7 +445,13 @@ expand.grid(`Number of RBC transfusion` = c('0', '1-5','6-10','11-20','>20'), an
     mutate(`% Developed Antibody During Encounter` = `Anti+`/(`Anti+`+`Anti-`) * 100) %>%
     .[match(c("0","1-5","6-10","11-20",">20"), .$`Number of RBC transfusion`), ] %>%
     #dplyr::select(`Number of RBC transfusion`, `% Developed Antibody During Encounter`) %>%
-    kable(., booktabs = TRUE, format="latex", align=c("l","c"), row.names=FALSE, caption="Transfusion and Antibody Development")   %>%
+    kable(., 
+          booktabs = TRUE, 
+          format="latex", 
+          align=c("l","r","r","r"), 
+          digits = 2,
+          row.names=FALSE, 
+          caption="Transfusion and Antibody Development")   %>%
     kable_styling(position = "center") %>%
     gsub(pattern="\\[H\\]","\\[h\\]", x=.)
 
