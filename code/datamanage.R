@@ -100,7 +100,7 @@ democ <- demodf %>%
     select(MRN, age, gender,race, death_date, admit_dt, discharge_dt) %>%
     # if not dead set as 0
     mutate(
-           MRN = as.integer(MRN),
+           #MRN = as.integer(MRN),
            death_date = as.POSIXct(death_date, format = "%m/%d/%Y %H:%M",tz="UTC"),
            admit_dt = as.POSIXct(admit_dt, format = "%m/%d/%Y %H:%M",tz="UTC"),
            discharge_dt = as.POSIXct(discharge_dt, format="%m/%d/%Y %H:%M",tz="UTC")) %>%
@@ -109,8 +109,12 @@ democ <- demodf %>%
     ) %>%
     mutate(lastdate = if_else(is.na(death_date), discharge_dt, if_else(death_date - discharge_dt >= 0,death_date, discharge_dt))) %>%
     # only those with age and discharge date
-    filter(!is.na(age) & !is.na(discharge_dt) & gender != "U")
+    filter(!is.na(age) & !is.na(discharge_dt) & gender != "U") 
+    #filter(!is.na(age) & !is.na(discharge_dt) & gender != "U") %>% 
+    #distinct(MRN, .keep_all = TRUE)
 
+demodf[duplicated(demodf$MRN), ] %>%
+    filter(MRN == 3000277)
 
 
 
@@ -203,6 +207,7 @@ mutate(antibody = ifelse(is.na(antibody), 0, 1)) %>%
 
 # remember there are duplicate people in the data
 demodf %>% distinct(MRN) %>% nrow
+demodf %>% nrow
 
 
 # count of neg and pos
@@ -237,6 +242,17 @@ tab2aa <- map_dfr(
                   myfunction
     )
 
+tab2aai <- map_dfr(
+                   abd %>%
+                       filter(Dev > 0) %>%
+                       select(Dev),
+                   myfunction
+    )
+
+tab2aain <- abd %>%
+    filter(Dev > 0) %>%
+    nrow
+
 tab2aan <- abd %>% nrow
     
 
@@ -266,6 +282,7 @@ tab2ab <- map_dfr(
 )
 
 ###--- c. How many developed new antibody without history of antibody
+"%ni%" <- Negate("%in%")
 tab2acn <- abd %>%
     filter(MRN %ni% patwanth)  %>%
     nrow
@@ -282,13 +299,15 @@ tab2ac <- map_dfr(
 rbind(
       c(Totnum=tab2aan,tab2aa),
       c(Totnum=tab2abn,tab2ab),
-      c(Totnum=tab2acn,tab2ac)
+      c(Totnum=tab2acn,tab2ac),
+      c(Totnum=tab2aai,tab2aaa)
 ) %>% 
     t %>%
     data.frame %>%
     rename("Median # Antibody during H" = 1,
            "New Ant w H" = 2,
-           "New Ant w/o H" = 3
+           "New Ant w/o H" = 3,
+           "New Anti w+w/o H" = 4
     )
 
 
