@@ -305,6 +305,7 @@ myfunction <- function(data){
     )
 }
 ##- A
+
 ###--- a. Median number of antibody developed during hospitalization among those that have antibody developed
 library(tidyr)
 tab2aa <- map_dfr(
@@ -312,11 +313,20 @@ tab2aa <- map_dfr(
                       select(Dev) ,
                   myfunction
     )
+
+tab2aan <- abd %>% nrow
     
 
 library('tidyr')
-###--- b. How many developed new antibody?
-###--- b.i How many new antibodies?
+###--- b. Number of patients admitted with history of antibody
+tab2abn <- abd %>% 
+    select(contains("pre Y=1"),Dev,MRN) %>%
+    mutate(preabd = rowSums(.[1:16])) %>% 
+    filter(preabd > 0) %>%
+    #filter(preabd > 0 & Dev == 0) %>%
+    dplyr::select(MRN) %>% unlist %>% length
+###--- b.i How many developed new antibody?How many new antibodies?
+
 patwanth <- abd %>% 
     select(contains("pre Y=1"),Dev,MRN) %>%
     mutate(preabd = rowSums(.[1:16])) %>% 
@@ -333,23 +343,27 @@ tab2ab <- map_dfr(
 )
 
 ###--- c. How many developed new antibody without history of antibody
+tab2acn <- abd %>%
+    filter(MRN %ni% patwanth)  %>%
+    nrow
+
 ###--- c.i How many new antibodies
 tab2ac <- map_dfr(
         abd %>%
-            filter(MRN %ni% patwanth) %>% 
+            filter(MRN %ni% patwanth & Dev > 0) %>% 
             select(Dev) 
         , myfunction
 )
 
 
 rbind(
-      tab2aa,
-      tab2ab,
-      tab2ac
+      c(Totnum=tab2aan,tab2aa),
+      c(Totnum=tab2abn,tab2ab),
+      c(Totnum=tab2acn,tab2ac)
 ) %>% 
     t %>%
     data.frame %>%
-    rename("New Ant dur hosp" = 1,
+    rename("Median # Antibody during H" = 1,
            "New Ant w H" = 2,
            "New Ant w/o H" = 3
     ) %>%

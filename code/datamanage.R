@@ -3,7 +3,7 @@
 # Created by:       C.K.
 # Created on:       11/07/2018
 # Modified by:      C.K.
-# Modified on: 		2018 Dec 22
+# Modified on: 		2018 Dec 24
 # - - - - - - - - - - - - - - - - - - - - - #
 
 
@@ -236,11 +236,20 @@ tab2aa <- map_dfr(
                       select(Dev) ,
                   myfunction
     )
+
+tab2aan <- abd %>% nrow
     
 
 library('tidyr')
-###--- b. How many developed new antibody?
-###--- b.i How many new antibodies?
+###--- b. Number of patients admitted with history of antibody
+tab2abn <- abd %>% 
+    select(contains("pre Y=1"),Dev,MRN) %>%
+    mutate(preabd = rowSums(.[1:16])) %>% 
+    filter(preabd > 0) %>%
+    #filter(preabd > 0 & Dev == 0) %>%
+    dplyr::select(MRN) %>% unlist %>% length
+###--- b.i How many developed new antibody?How many new antibodies?
+
 patwanth <- abd %>% 
     select(contains("pre Y=1"),Dev,MRN) %>%
     mutate(preabd = rowSums(.[1:16])) %>% 
@@ -257,19 +266,23 @@ tab2ab <- map_dfr(
 )
 
 ###--- c. How many developed new antibody without history of antibody
+tab2acn <- abd %>%
+    filter(MRN %ni% patwanth)  %>%
+    nrow
+
 ###--- c.i How many new antibodies
 tab2ac <- map_dfr(
         abd %>%
-            filter(MRN %ni% patwanth) %>% 
+            filter(MRN %ni% patwanth & Dev > 0) %>% 
             select(Dev) 
         , myfunction
 )
 
 
 rbind(
-      tab2aa,
-      tab2ab,
-      tab2ac
+      c(Totnum=tab2aan,tab2aa),
+      c(Totnum=tab2abn,tab2ab),
+      c(Totnum=tab2acn,tab2ac)
 ) %>% 
     t %>%
     data.frame %>%
@@ -458,7 +471,6 @@ antimrn <- abd %>%
     select(MRN) %>% unlist %>% as.vector
 
 
-
 # time Test for Antibody for those that didn't have antibody developed!
 
 neganttbl <- left_join(
@@ -468,21 +480,24 @@ neganttbl <- left_join(
                  complete_dt = as.POSIXct(complete_dt, format = "%m/%d/%Y %H:%M", tz="UTC")
                  ) %>%
       filter(MRN %in% (noanti)
-             )  %>%
+             )  %>% 
       # join transfusion data to exclude screen times < 12 hours before transfusion
       left_join(
-                transf %>%
-                    filter(CONTENT == "RBC" & MRN %in% noanti ) %>% 
-                    select(MRN, TIMESTAMP)
-      ) %>%  
+                tab4
+                #transf %>%
+                    #filter(CONTENT == "RBC" & MRN %in% noanti ) %>% 
+                    #select(MRN, TIMESTAMP)
+      ) %>%
       filter(
-             difftime(ORD_DT, TIMESTAMP, units="days") > 0.5
+             difftime(ORD_DT, ttime, units="days") > 0.5
+             #difftime(ORD_DT, TIMESTAMP, units="days") > 0.5
              ) %>% 
-      group_by(MRN) %>%
+      group_by(MRN) %>% 
       top_n(-1, ORD_DT) %>% 
       distinct(MRN, .keep_all = TRUE) %>%
       select(MRN, ORD_DT) %>% 
-      rename(negtime1 = ORD_DT),
+      rename(negtime1 = ORD_DT)  
+  ,
 
       tns %>%
           mutate(
@@ -493,21 +508,23 @@ neganttbl <- left_join(
              )  %>%
       # join transfusion data to exclude screen times < 12 hours before transfusion
       left_join(
-                transf %>%
-                    filter(CONTENT == "RBC" & MRN %in% noanti ) %>% 
-                    select(MRN, TIMESTAMP)
+                tab4
+                #transf %>%
+                    #filter(CONTENT == "RBC" & MRN %in% noanti ) %>% 
+                    #select(MRN, TIMESTAMP)
       ) %>%  
       filter(
-             difftime(ORD_DT, TIMESTAMP, units="days") > 0.5
+             difftime(ORD_DT, ttime, units="days") > 0.5
+             #difftime(ORD_DT, TIMESTAMP, units="days") > 0.5
              ) %>% 
       group_by(MRN) %>%
       # get the top 2 earliest time
       top_n(-2, ORD_DT) %>% 
       # arrange by descending to get the second from the last
-      arrange(MRN, desc(ORD_DT)) %>%
+      arrange(MRN,ttime) %>% 
       distinct(MRN, .keep_all = TRUE) %>%
       select(MRN, ORD_DT)  %>%
-      rename(negtime2 = ORD_DT)
+      rename(negtime2 = ORD_DT) 
   ) 
 
 ### IMPORTANT THE TIMEZONES SHOULD BE THE SAME ACROSS ALL DATAFILES THIS COULD F UP THE CALCULATIONS
@@ -517,26 +534,27 @@ neganttbl <- left_join(
 negantgroup <- neganttbl %>%
     filter(
            negtime2 !=  negtime1
-    ) %>% 
+    ) %>%  
     left_join(
-              transf %>%
-                  filter(CONTENT == "RBC")  %>%
-                  group_by(MRN) %>%
-                  arrange(desc(TIMESTAMP))  
+              tab4
+              #transf %>%
+                  #filter(CONTENT == "RBC")  %>%
+                  #group_by(MRN) %>%
+                  #arrange(desc(TIMESTAMP))  
     ) %>% 
-    select(MRN, negtime1,negtime2, TIMESTAMP) %>%
+    select(MRN, negtime1,negtime2, ttime) %>%
     filter(
-           difftime(negtime1, TIMESTAMP) > 0.5
+           difftime(negtime1, ttime) > 0.5
            #TIMESTAMP < negtime1
            ) %>%
     group_by(MRN) %>%
-    arrange(desc(TIMESTAMP)) %>%
-    top_n(-1, TIMESTAMP) %>%  
+    arrange(desc(ttime)) %>%
+    top_n(-1, ttime) %>%  
     #distinct(MRN, .keep_all = TRUE) %>% 
     mutate(
            antipos = 0,
-           transToAnti1 = difftime(negtime1, TIMESTAMP, units="days"),
-           transToAnti2 = difftime(negtime2, TIMESTAMP, units="days"),
+           transToAnti1 = difftime(negtime1, ttime, units="days"),
+           transToAnti2 = difftime(negtime2, ttime, units="days"),
            Ant1Ant2 = difftime(negtime2, negtime1, units="days")
     )  
 
